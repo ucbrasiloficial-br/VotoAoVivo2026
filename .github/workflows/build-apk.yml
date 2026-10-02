@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Baixar projeto
@@ -18,11 +18,24 @@ jobs:
         run: |
           mkdir -p projeto
           unzip -q VotoAoVivo2026_FINAL.zip -d projeto
-          echo "Conteúdo extraído:"
-          find projeto -maxdepth 3 -type f | head -100
+
+          echo "Procurando projeto Android..."
+
+          PROJECT_DIR=$(dirname "$(find projeto -type f -name settings.gradle.kts -print -quit)")
+
+          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            find projeto -maxdepth 6 -type f | head -200
+            exit 1
+          fi
+
+          echo "Projeto encontrado em:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -33,13 +46,26 @@ jobs:
           gradle-version: '8.9'
 
       - name: Gerar APK
-        working-directory: projeto/finalapp
         run: |
+          echo "Compilando em: $PROJECT_DIR"
+          cd "$PROJECT_DIR"
           gradle --no-daemon :app:assembleDebug
+
+      - name: Verificar APK
+        run: |
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          echo "APK gerado com sucesso:"
+          ls -lh "$APK"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: VotoAoVivo2026-APK
-          path: projeto/finalapp/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
